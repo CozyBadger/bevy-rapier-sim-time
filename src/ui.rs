@@ -7,17 +7,16 @@ use crate::time::{PhysicsTime, PhysicsTimeExt, PhysicsTimeMode};
 use crate::RestartEvent;
 
 const ICON_RESTART: char = '\u{E800}';
-const ICON_PAUSE:   char = '\u{E801}';
-const ICON_PLAY:    char = '\u{E802}';
+const ICON_PAUSE: char = '\u{E801}';
+const ICON_PLAY: char = '\u{E802}';
 const ICON_FASTFWD: char = '\u{E803}';
-const ICON_STEP:    char = '\u{E804}';
+const ICON_STEP: char = '\u{E804}';
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_resource::<UiSettings>()
+        app.init_resource::<UiSettings>()
             .register_type::<UiSettings>()
             .add_systems(Startup, init_icon_font)
             .add_systems(Update, display_custom_window);
@@ -59,7 +58,9 @@ fn init_icon_font(mut contexts: EguiContexts) {
 
     fonts.font_data.insert(
         "sim_icons".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/fontello.ttf")),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/fontello.ttf"
+        ))),
     );
 
     fonts
@@ -77,10 +78,12 @@ fn display_custom_window(
     mut time: ResMut<PhysicsTime>,
     mut restart_events: EventWriter<RestartEvent>,
     diagnostics: Res<DiagnosticsStore>,
-    keys: Res<Input<KeyCode>>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut last_fps: Local<f64>,
 ) {
-    if !settings.enabled { return; }
+    if !settings.enabled {
+        return;
+    }
     let ctx = egui_contexts.ctx_mut();
 
     let font = egui::FontId::new(
@@ -89,7 +92,10 @@ fn display_custom_window(
     );
 
     egui::Window::new("widget")
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0., settings.margin_top))
+        .anchor(
+            egui::Align2::CENTER_TOP,
+            egui::vec2(0., settings.margin_top),
+        )
         .title_bar(false)
         .auto_sized()
         .show(ctx, |ui| {
@@ -97,15 +103,14 @@ fn display_custom_window(
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 let elapsed = time.elapsed();
                 ui.label(
-                    egui::RichText::new(
-                        format!(
-                            "{:01}:{:02}:{:02}:{:03}",
-                            elapsed.as_secs() / 3600,
-                            (elapsed.as_secs() % 3600) / 60,
-                            elapsed.as_secs() % 60,
-                            elapsed.subsec_millis(),
-                        )
-                    ).size(settings.info_font_size),
+                    egui::RichText::new(format!(
+                        "{:01}:{:02}:{:02}:{:03}",
+                        elapsed.as_secs() / 3600,
+                        (elapsed.as_secs() % 3600) / 60,
+                        elapsed.as_secs() % 60,
+                        elapsed.subsec_millis(),
+                    ))
+                    .size(settings.info_font_size),
                 );
 
                 let active_icon = match time.context().mode {
@@ -121,8 +126,13 @@ fn display_custom_window(
                 };
 
                 ui.add_space(settings.spacing_before);
-                for (idx, icon) in [ICON_RESTART, ICON_PAUSE, ICON_STEP, ICON_PLAY, ICON_FASTFWD].into_iter().enumerate() {
-                    if idx > 0 { ui.add_space(settings.spacing); }
+                for (idx, icon) in [ICON_RESTART, ICON_PAUSE, ICON_STEP, ICON_PLAY, ICON_FASTFWD]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if idx > 0 {
+                        ui.add_space(settings.spacing);
+                    }
 
                     let base_color = if active_icon == icon {
                         if icon == ICON_PAUSE {
@@ -134,39 +144,47 @@ fn display_custom_window(
                         egui::Color32::from_gray(150)
                     };
 
-                    ui.style_mut().visuals.widgets.inactive.fg_stroke.color = base_color.gamma_multiply(0.7);
-                    ui.style_mut().visuals.widgets.hovered.fg_stroke.color = base_color.gamma_multiply(0.9);
+                    ui.style_mut().visuals.widgets.inactive.fg_stroke.color =
+                        base_color.gamma_multiply(0.7);
+                    ui.style_mut().visuals.widgets.hovered.fg_stroke.color =
+                        base_color.gamma_multiply(0.9);
                     ui.style_mut().visuals.widgets.active.fg_stroke.color = base_color;
 
-                    let text = egui::RichText::new(icon).font(font.clone()).line_height(Some(settings.line_height));
+                    let text = egui::RichText::new(icon)
+                        .font(font.clone())
+                        .line_height(Some(settings.line_height));
                     let label = egui::Label::new(text).sense(egui::Sense::click());
 
                     let response = ui.add(label);
                     let key = match icon {
                         ICON_PAUSE => Some(KeyCode::Space),
-                        ICON_STEP  => Some(KeyCode::Slash),
+                        ICON_STEP => Some(KeyCode::Slash),
                         _ => None,
                     };
 
-                    let response = response.on_hover_ui(|ui| {
-                        match icon {
-                            ICON_RESTART => { ui.label("Restart simulation from the beginning"); },
-                            ICON_PAUSE   => {
-                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                    ui.label("Pause simulation");
-                                    ui.label(egui::RichText::new("Space").italics());
-                                });
-                            }
-                            ICON_STEP    => {
-                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                    ui.label("Run one simulation step");
-                                    ui.label(egui::RichText::new("/").italics());
-                                });
-                            }
-                            ICON_PLAY    => { ui.label("Run simulation with normal speed"); },
-                            ICON_FASTFWD => { ui.label("Fast-Forward simulation with maximum speed"); },
-                            _ => (),
+                    let response = response.on_hover_ui(|ui| match icon {
+                        ICON_RESTART => {
+                            ui.label("Restart simulation from the beginning");
                         }
+                        ICON_PAUSE => {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.label("Pause simulation");
+                                ui.label(egui::RichText::new("Space").italics());
+                            });
+                        }
+                        ICON_STEP => {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.label("Run one simulation step");
+                                ui.label(egui::RichText::new("/").italics());
+                            });
+                        }
+                        ICON_PLAY => {
+                            ui.label("Run simulation with normal speed");
+                        }
+                        ICON_FASTFWD => {
+                            ui.label("Fast-Forward simulation with maximum speed");
+                        }
+                        _ => (),
                     });
 
                     let key_pressed = match key {
@@ -198,7 +216,11 @@ fn display_custom_window(
                                 }
                             }
                             ICON_FASTFWD => {
-                                if time.context().mode == (PhysicsTimeMode::Running { speed: std::f32::INFINITY }) {
+                                if time.context().mode
+                                    == (PhysicsTimeMode::Running {
+                                        speed: std::f32::INFINITY,
+                                    })
+                                {
                                     time.pause();
                                 } else {
                                     time.run(std::f32::INFINITY);
@@ -215,7 +237,11 @@ fn display_custom_window(
                     PhysicsTimeMode::OneTick => 0.,
                     PhysicsTimeMode::Running { speed } => {
                         let expected_fps = time.context().timestep.as_secs_f64().recip();
-                        let measured_fps = diagnostics.get(crate::time::PHYSICS_FPS).unwrap().average().unwrap_or_default();
+                        let measured_fps = diagnostics
+                            .get(&crate::time::SYSTEM_ITERATION_COUNT)
+                            .unwrap()
+                            .average()
+                            .unwrap_or_default();
                         let speed_factor = speed as f64;
 
                         let actual_fps = last_fps.max(measured_fps);
@@ -229,7 +255,9 @@ fn display_custom_window(
                     }
                 };
 
-                ui.label(egui::RichText::new(format!("{:.2}x", speed)).size(settings.info_font_size));
+                ui.label(
+                    egui::RichText::new(format!("{:.2}x", speed)).size(settings.info_font_size),
+                );
             });
         });
 }

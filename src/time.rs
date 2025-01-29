@@ -1,10 +1,13 @@
 use std::time::Duration;
 
-use bevy::diagnostic::{DiagnosticId, RegisterDiagnostic, Diagnostic, Diagnostics};
+use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
+use bevy_inspector_egui::egui::emath::Numeric;
 
-pub const PHYSICS_FPS: DiagnosticId = DiagnosticId::from_u128(168810318229280110473455791631253127370);
+// Following suggestions in https://github.com/aDecoy/bevy-rapier-sim-time/blob/master/src/time.rs
+pub const SYSTEM_ITERATION_COUNT: DiagnosticPath =
+    DiagnosticPath::const_new("system_iteration_count");
 
 pub const DEFAULT_TIMESTEP: Duration = Duration::from_micros(15625);
 pub const MAX_PHYSICS_EXEC_TIME: Duration = Duration::from_micros(15625);
@@ -16,12 +19,11 @@ pub struct TimePlugin;
 
 impl Plugin for TimePlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_schedule(PhysicsSchedule)
+        app.init_schedule(PhysicsSchedule)
             .register_type::<PhysicsTime>()
             .init_resource::<PhysicsTime>()
             .init_resource::<DiagnosticFrameCount>()
-            .register_diagnostic(Diagnostic::new(PHYSICS_FPS, "physics_fps", 10))
+            .register_diagnostic(Diagnostic::new(SYSTEM_ITERATION_COUNT).with_suffix(" iterations"))
             .add_systems(PhysicsSchedule, diagnosics_count)
             .add_systems(Update, diagnostics_report)
             .add_systems(PreUpdate, run_physics_schedule);
@@ -55,7 +57,8 @@ impl PhysicsTimeExt for PhysicsTime {
     }
 
     fn run(&mut self, speed: f32) {
-        self.context_mut().set_mode(PhysicsTimeMode::Running { speed });
+        self.context_mut()
+            .set_mode(PhysicsTimeMode::Running { speed });
     }
 }
 
@@ -80,7 +83,7 @@ impl PhysicsTimeInner {
 impl Default for PhysicsTimeInner {
     fn default() -> Self {
         Self {
-            mode:     PhysicsTimeMode::default(),
+            mode: PhysicsTimeMode::default(),
             old_mode: PhysicsTimeMode::default(),
             timestep: DEFAULT_TIMESTEP,
             overstep: Duration::ZERO,
@@ -155,7 +158,9 @@ pub fn run_physics_schedule(world: &mut World) {
     world.schedule_scope(PhysicsSchedule, |world, schedule| {
         while expend_time(&mut world.resource_mut::<PhysicsTime>()) {
             schedule.run(world);
-            if time.elapsed() >= MAX_PHYSICS_EXEC_TIME { break; }
+            if time.elapsed() >= MAX_PHYSICS_EXEC_TIME {
+                break;
+            }
         }
         limit_overstep(&mut world.resource_mut::<PhysicsTime>());
     });
@@ -170,10 +175,10 @@ fn diagnostics_report(
     mut frame_count: ResMut<DiagnosticFrameCount>,
     time: Res<Time<Real>>,
 ) {
-    let delta = time.delta_seconds_f64();
-    if delta == 0. { return; }
-    diagnostics.add_measurement(PHYSICS_FPS, || {
-        frame_count.0 as f64 / delta
-    });
+    let delta = time.delta_secs().to_f64();
+    if delta == 0. {
+        return;
+    }
+    diagnostics.add_measurement(&SYSTEM_ITERATION_COUNT, || frame_count.0 as f64 / delta);
     frame_count.0 = 0;
 }
