@@ -28,29 +28,29 @@ fn main() {
         .add_event::<RestartEvent>()
         .add_systems(Startup, spawn_scene)
         .add_systems(PreUpdate, reset_scene.before(time::run_physics_schedule))
-        .add_systems(Update, bevy::window::close_on_esc)
+        .add_systems(Update, close_on_esc)
         .add_plugins(FrameTimeDiagnosticsPlugin)
         .add_plugins(LogDiagnosticsPlugin {
             wait_duration: Duration::from_millis(1000),
             filter: Some(vec![FrameTimeDiagnosticsPlugin::FPS]),
             ..default()
         })
-        .add_systems(time::PhysicsSchedule, (
-            RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::SyncBackend)
-                .in_set(PhysicsSet::SyncBackend),
-            RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::StepSimulation)
-                .in_set(PhysicsSet::StepSimulation),
-            RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::Writeback)
-                .in_set(PhysicsSet::Writeback),
-        ))
+        .add_systems(
+            time::PhysicsSchedule,
+            (
+                RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::SyncBackend)
+                    .in_set(PhysicsSet::SyncBackend),
+                RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::StepSimulation)
+                    .in_set(PhysicsSet::StepSimulation),
+                RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::Writeback)
+                    .in_set(PhysicsSet::Writeback),
+            ),
+        )
         .add_systems(Last, bevy_rapier3d::plugin::systems::sync_removals)
         .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(RapierConfiguration {
-            timestep_mode: TimestepMode::Fixed {
-                dt: time::DEFAULT_TIMESTEP.as_secs_f32(),
-                substeps: 1,
-            },
-            ..default()
+        .insert_resource(TimestepMode::Fixed {
+            dt: time::DEFAULT_TIMESTEP.as_secs_f32(),
+            substeps: 1,
         })
         .run();
 }
@@ -67,28 +67,30 @@ fn spawn_scene(
     events.send(RestartEvent);
 
     // circular base
-    commands.spawn((
-        SpatialBundle::default(),
-        RigidBody::Fixed,
-        Collider::cylinder(0.01, 7.0),
-    )).with_children(|commands| {
-        commands.spawn(PbrBundle {
-            mesh: meshes.add(shape::Circle::new(7.0).into()),
-            material: materials.add(Color::WHITE.into()),
-            transform: Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-            ..default()
+    commands
+        .spawn((
+            Transform::default(),
+            RigidBody::Fixed,
+            Collider::cylinder(0.01, 7.0),
+        ))
+        .with_children(|commands| {
+            commands.spawn((
+                Mesh3d(meshes.add(Circle::new(7.0))),
+                MeshMaterial3d(materials.add(Color::WHITE)),
+                Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            ));
         });
-    });
+
     // light
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            intensity: 1500.0,
+    commands.spawn((
+        PointLight {
+            intensity: 1_200_000.0,
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    });
+        Transform::from_xyz(4.0, 8.0, 4.0),
+    ));
+
     // camera
     let expected_transform = Transform::from_xyz(-5., 7.5, 16.).looking_at(Vec3::Y, Vec3::Y);
     let (yaw, pitch, _roll) = expected_transform.rotation.to_euler(EulerRot::YXZ);
@@ -111,7 +113,9 @@ fn reset_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut balls: Query<Entity, With<Ball>>,
 ) {
-    if events.is_empty() { return; }
+    if events.is_empty() {
+        return;
+    }
     events.clear();
 
     *time = time::PhysicsTime::default();
@@ -121,19 +125,30 @@ fn reset_scene(
         commands.entity(entity).despawn();
     }
 
+    // Falling ball
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere {
-                radius: 0.5,
-                ..default()
-            })),
-            material: materials.add(Color::rgb_u8(124, 144, 255).into()),
-            transform: Transform::from_xyz(0., 4., 0.),
-            ..default()
-        },
+        Mesh3d(meshes.add(Sphere::new(0.5).mesh().uv(32, 18))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0., 4., 0.),
         RigidBody::Dynamic,
         Collider::ball(0.5),
         Restitution::coefficient(0.9),
         Ball,
     ));
+}
+
+pub fn close_on_esc(
+    mut commands: Commands,
+    focused_windows: Query<(Entity, &Window)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    for (window, focus) in focused_windows.iter() {
+        if !focus.focused {
+            continue;
+        }
+
+        if input.just_pressed(KeyCode::Escape) {
+            commands.entity(window).despawn();
+        }
+    }
 }
