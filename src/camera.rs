@@ -21,7 +21,7 @@ impl Plugin for OrbitCameraPlugin {
 #[derive(Bundle, Default)]
 pub struct OrbitCameraBundle {
     pub orbit_camera: OrbitCamera,
-    pub camera3d: Camera3dBundle,
+    pub camera3d: Camera3d,
 }
 
 #[derive(Debug, Component, Reflect)]
@@ -82,12 +82,14 @@ fn apply_camera_controls(
     mut gamepad_events: EventReader<GamepadEvent>,
     mut gamepad_state: Local<GamepadState>,
     time: Res<Time>,
-    buttons: Res<Input<MouseButton>>,
+    buttons: Res<ButtonInput<MouseButton>>,
     mut egui_contexts: EguiContexts,
     mut camera_query: Query<&mut OrbitCamera>,
 ) {
     let egui_ctx = egui_contexts.ctx_mut();
-    if egui_ctx.wants_pointer_input() { return; }
+    if egui_ctx.wants_pointer_input() {
+        return;
+    }
 
     enum MyEvent {
         Zoom(f32),
@@ -113,25 +115,23 @@ fn apply_camera_controls(
 
     for ev in gamepad_events.read() {
         match ev {
-            GamepadEvent::Axis(ev) => {
-                match ev.axis_type {
-                    GamepadAxisType::LeftStickX => gamepad_state.left_stick_x = ev.value,
-                    GamepadAxisType::LeftStickY => gamepad_state.left_stick_y = ev.value,
-                    GamepadAxisType::RightStickX => gamepad_state.right_stick_x = ev.value,
-                    GamepadAxisType::RightStickY => gamepad_state.right_stick_y = ev.value,
-                    _ => {}
-                }
-            }
+            GamepadEvent::Axis(ev) => match ev.axis {
+                GamepadAxis::LeftStickX => gamepad_state.left_stick_x = ev.value,
+                GamepadAxis::LeftStickY => gamepad_state.left_stick_y = ev.value,
+                GamepadAxis::RightStickX => gamepad_state.right_stick_x = ev.value,
+                GamepadAxis::RightStickY => gamepad_state.right_stick_y = ev.value,
+                _ => {}
+            },
 
-            GamepadEvent::Button(ev) => {
-                match ev.button_type {
-                    GamepadButtonType::LeftTrigger | GamepadButtonType::LeftTrigger2 =>
-                        gamepad_state.left_trigger = ev.value,
-                    GamepadButtonType::RightTrigger | GamepadButtonType::RightTrigger2 =>
-                        gamepad_state.right_trigger = ev.value,
-                    _ => {}
+            GamepadEvent::Button(ev) => match ev.button {
+                GamepadButton::LeftTrigger | GamepadButton::LeftTrigger2 => {
+                    gamepad_state.left_trigger = ev.value
                 }
-            }
+                GamepadButton::RightTrigger | GamepadButton::RightTrigger2 => {
+                    gamepad_state.right_trigger = ev.value
+                }
+                _ => {}
+            },
 
             GamepadEvent::Connection(ev) => {
                 if ev.disconnected() {
@@ -142,8 +142,8 @@ fn apply_camera_controls(
         }
     }
 
-    let gamepad_axis_multiplier = time.delta_seconds() * 1000.;
-    let gamepad_zoom_multiplier = time.delta_seconds() * 40.;
+    let gamepad_axis_multiplier = time.delta_secs() * 1000.;
+    let gamepad_zoom_multiplier = time.delta_secs() * 40.;
 
     if gamepad_state.right_stick_x != 0. || gamepad_state.right_stick_y != 0. {
         events.push(MyEvent::Rotate((
@@ -166,18 +166,23 @@ fn apply_camera_controls(
         ));
     }
 
-    if events.is_empty() { return; }
+    if events.is_empty() {
+        return;
+    }
 
     let mut camcount = 0;
     for mut camera in camera_query.iter_mut() {
-        if !camera.active { return; }
+        if !camera.active {
+            return;
+        }
         camcount += 1;
 
         for event in events.iter() {
             match event {
                 MyEvent::Zoom(dy) => {
-                    camera.distance = (camera.distance * ((1. + camera.zoom_sensitivity).powf(-dy)))
-                        .clamp(camera.min_distance, camera.max_distance);
+                    camera.distance = (camera.distance
+                        * ((1. + camera.zoom_sensitivity).powf(-dy)))
+                    .clamp(camera.min_distance, camera.max_distance);
                 }
                 MyEvent::Rotate((dx, dy)) => {
                     camera.gimbal_x += dx * camera.rotate_sensitivity;
@@ -203,19 +208,20 @@ fn update_camera(
     mut camera_query: Query<(Entity, &mut OrbitCamera)>,
     time: Res<Time>,
 ) {
-    let delta = time.delta_seconds();
+    let delta = time.delta_secs();
     let focus_rotation = Quat::IDENTITY;
 
     for (entity, mut camera) in camera_query.iter_mut() {
-        if !camera.active { return; }
+        if !camera.active {
+            return;
+        }
 
         camera.last_rotation = focus_rotation.slerp(camera.last_rotation, 1. - delta * 10.);
 
         let quat = Quat::from_euler(EulerRot::YXZ, -camera.gimbal_x, -camera.gimbal_y, 0.);
 
         let mut new_transform = Transform::from_translation(
-            camera.target +
-            (camera.last_rotation * quat * Vec3::Z) * camera.distance
+            camera.target + (camera.last_rotation * quat * Vec3::Z) * camera.distance,
         );
 
         new_transform.look_at(camera.target, camera.last_rotation * Vec3::Y);
