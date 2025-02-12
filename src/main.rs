@@ -44,7 +44,9 @@ fn main() {
                     .in_set(PhysicsSet::StepSimulation),
                 RapierPhysicsPlugin::<NoUserData>::get_systems(PhysicsSet::Writeback)
                     .in_set(PhysicsSet::Writeback),
-            ),
+            )
+            .chain()
+            .before(TransformSystem::TransformPropagate),
         )
         .add_systems(Last, bevy_rapier3d::plugin::systems::sync_removals)
         .insert_resource(ClearColor(Color::BLACK))
